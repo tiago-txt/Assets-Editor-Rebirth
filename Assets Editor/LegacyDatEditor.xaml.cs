@@ -1,4 +1,4 @@
-﻿using MaterialDesignThemes.Wpf;
+using MaterialDesignThemes.Wpf;
 using Microsoft.Win32;
 using Newtonsoft.Json.Serialization;
 using System;
@@ -9,6 +9,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -16,6 +17,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Tibia.Protobuf.Appearances;
+using FolderBrowserDialog = System.Windows.Forms.FolderBrowserDialog;
 
 namespace Assets_Editor
 {
@@ -33,6 +35,7 @@ namespace Assets_Editor
         public AppearanceFlags CurrentFlags = null;
         private int CurrentSprDir = 2;
         private bool isPageLoaded = false;
+        private GridView _objListGridView;
         private bool isObjectLoaded = false;
         private bool isUpdatingFrame = false;
         private VersionInfo loadedVersion;
@@ -45,6 +48,7 @@ namespace Assets_Editor
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
             isPageLoaded = true;
+            _objListGridView = ObjListView?.View as GridView;
         }
 
         public LegacyDatEditor()
@@ -102,6 +106,59 @@ namespace Assets_Editor
 
             loadedVersion = versionInfo;
             SetThingViewLayout();
+        }
+
+        private async void ConvertToAssets_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (MainWindow.appearances == null || MainWindow.MainSprStorage == null)
+                {
+                    ErrorManager.ShowError("No legacy client is currently loaded.");
+                    return;
+                }
+
+                using FolderBrowserDialog dialog = new()
+                {
+                    Description = "Select output folder for converted assets",
+                    ShowNewFolderButton = true
+                };
+
+                if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK || string.IsNullOrWhiteSpace(dialog.SelectedPath))
+                    return;
+
+                string outputPath = dialog.SelectedPath;
+
+                var progress = new Progress<(int percent, string message)>(p =>
+                {
+                    ConvertToAssetsProgress.Value = p.percent;
+                    ConvertToAssetsStatus.Text = p.message ?? "";
+                });
+                ConvertToAssetsProgress.Value = 0;
+                ConvertToAssetsStatus.Text = "Starting...";
+                ConvertToAssetsDialogHost.IsOpen = true;
+                Mouse.OverrideCursor = Cursors.Wait;
+                IsEnabled = false;
+
+                await Task.Run(() =>
+                    AssetsConverter.ConvertLegacyToAssets(outputPath, MainWindow.appearances, MainWindow.MainSprStorage, progress));
+
+                ConvertToAssetsDialogHost.IsOpen = false;
+                StatusBar.MessageQueue?.Enqueue(
+                    "Successfully converted legacy client to assets.",
+                    null, null, null, false, true, TimeSpan.FromSeconds(3));
+            }
+            catch (Exception ex)
+            {
+                MainWindow.Log(ex.ToString(), "Error");
+                ErrorManager.ShowError("Failed to convert legacy client to assets. Check logger or crash logs for details.");
+            }
+            finally
+            {
+                ConvertToAssetsDialogHost.IsOpen = false;
+                Mouse.OverrideCursor = null;
+                IsEnabled = true;
+            }
         }
 
         private void UpdateFlagVisibility(Control control, string flagName) {
@@ -289,33 +346,79 @@ namespace Assets_Editor
             }
         }
 
+        private ListAnimationMode GetObjListAnimationMode()
+        {
+            return ObjListAnimationMode?.SelectedIndex is int i && i >= 0 && i <= 2
+                ? (ListAnimationMode)i
+                : ListAnimationMode.Always;
+        }
+
+        private void ObjListAnimationMode_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            if (ObjListView?.Items == null) return;
+            var mode = GetObjListAnimationMode();
+            if (mode == ListAnimationMode.Off)
+            {
+                foreach (ShowList item in ObjListView.Items)
+                    item.StopAnimation();
+            }
+            else if (mode == ListAnimationMode.Always)
+            {
+                ObjListView_ScrollChanged(ObjListView, null!);
+            }
+        }
+
+        private void ObjListViewItem_MouseEnter(object sender, MouseEventArgs e)
+        {
+            if (GetObjListAnimationMode() != ListAnimationMode.OnHover) return;
+            if (sender is not ListViewItem item || item.DataContext is not ShowList showList) return;
+            showList.StartAnimation();
+        }
+
+        private void ObjListViewItem_MouseLeave(object sender, MouseEventArgs e)
+        {
+            if (GetObjListAnimationMode() != ListAnimationMode.OnHover) return;
+            if (sender is not ListViewItem item || item.DataContext is not ShowList showList) return;
+            showList.StopAnimation();
+        }
+
+        private void ObjListViewMode_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            if (ObjListView == null || ObjListViewMode?.SelectedIndex is not int idx) return;
+            bool useGrid = idx == 1;
+            if (useGrid)
+            {
+                ObjListView.View = null;
+                ObjListView.ItemTemplate = (DataTemplate)FindResource("ObjListGridCardTemplate");
+                ObjListView.ItemsPanel = (ItemsPanelTemplate)FindResource("ObjListWrapPanel");
+                System.Windows.Controls.VirtualizingPanel.SetIsVirtualizing(ObjListView, false);
+            }
+            else
+            {
+                ObjListView.View = _objListGridView;
+                ObjListView.ItemTemplate = null;
+                ObjListView.ItemsPanel = null;
+                System.Windows.Controls.VirtualizingPanel.SetIsVirtualizing(ObjListView, true);
+            }
+            ObjListView_ScrollChanged(ObjListView, null!);
+        }
+
         private void ObjectMenuChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
         {
             UpdateShowList(ObjectMenu.SelectedIndex);
         }
         private void ObjListView_ScrollChanged(object sender, System.Windows.Controls.ScrollChangedEventArgs e)
         {
+            if (ObjListView.Items.Count == 0) return;
             VirtualizingStackPanel panel = Utils.FindVisualChild<VirtualizingStackPanel>(ObjListView);
-            if (ObjListView.Items.Count > 0 && panel != null)
+            if (panel != null)
             {
                 int offset = (int)panel.VerticalOffset;
                 for (int i = 0; i < ObjListView.Items.Count; i++)
                 {
-                    Appearance appearance = null;
                     ShowList item = (ShowList)ObjListView.Items[i];
                     if (i >= offset && i < Math.Min(offset + 20, ObjListView.Items.Count))
-                    {
-                        if (ObjectMenu.SelectedIndex == 0)
-                            appearance = MainWindow.appearances.Outfit[i];
-                        else if (ObjectMenu.SelectedIndex == 1)
-                            appearance = MainWindow.appearances.Object[i];
-                        else if (ObjectMenu.SelectedIndex == 2)
-                            appearance = MainWindow.appearances.Effect[i];
-                        else if (ObjectMenu.SelectedIndex == 3)
-                            appearance = MainWindow.appearances.Missile[i];
-
-                        AnimateSelectedListItem(item);
-                    }
+                        ApplyListItemAnimation(item);
                     else
                     {
                         item.StopAnimation();
@@ -328,6 +431,30 @@ namespace Assets_Editor
                         else if (ObjectMenu.SelectedIndex == 3)
                             ThingsMissile[i].Image = null;
                     }
+                }
+                return;
+            }
+            // Grid mode (WrapPanel): no virtualization, check visibility per item
+            var scrollViewer = Utils.FindVisualChild<ScrollViewer>(ObjListView);
+            if (scrollViewer == null) return;
+            for (int i = 0; i < ObjListView.Items.Count; i++)
+            {
+                ShowList item = (ShowList)ObjListView.Items[i];
+                var container = ObjListView.ItemContainerGenerator.ContainerFromItem(item) as ListViewItem;
+                bool visible = container != null && container.IsVisible;
+                if (visible)
+                    ApplyListItemAnimation(item);
+                else
+                {
+                    item.StopAnimation();
+                    if (ObjectMenu.SelectedIndex == 0)
+                        ThingsOutfit[i].Image = null;
+                    else if (ObjectMenu.SelectedIndex == 1)
+                        ThingsItem[i].Image = null;
+                    else if (ObjectMenu.SelectedIndex == 2)
+                        ThingsEffect[i].Image = null;
+                    else if (ObjectMenu.SelectedIndex == 3)
+                        ThingsMissile[i].Image = null;
                 }
             }
         }
@@ -1835,37 +1962,49 @@ namespace Assets_Editor
             GetCurrentAnimation()?.SpritePhase[(int)(SprFramesSlider.Value / SprFramesSlider.TickFrequency)].DurationMax = (uint)(SprPhaseMax.Value ?? 100);
         }
 
+        /// <summary>Loads thumbnail frames for the list item and starts or shows first frame according to animation mode.</summary>
         public void AnimateSelectedListItem(ShowList showList)
         {
-            // Find the ListViewItem for the selected item
-            try {
+            ApplyListItemAnimation(showList);
+        }
+
+        private void ApplyListItemAnimation(ShowList showList)
+        {
+            try
+            {
                 var listViewItem = ObjListView.ItemContainerGenerator.ContainerFromItem(showList) as ListViewItem;
-                if (listViewItem != null) {
-                    // Find the Image control within the ListViewItem
-                    var imageControl = Utils.FindVisualChild<Image>(listViewItem);
-                    if (imageControl != null) {
-                        showList.Images.Clear();
+                if (listViewItem == null) return;
+                var imageControl = Utils.FindVisualChild<Image>(listViewItem);
+                if (imageControl == null) return;
 
-                        Appearance appearance = null;
+                showList.Images.Clear();
+                Appearance appearance = null;
+                if (ObjectMenu.SelectedIndex == 0)
+                    appearance = MainWindow.appearances.Outfit.FirstOrDefault(o => o.Id == showList.Id);
+                else if (ObjectMenu.SelectedIndex == 1)
+                    appearance = MainWindow.appearances.Object.FirstOrDefault(o => o.Id == showList.Id);
+                else if (ObjectMenu.SelectedIndex == 2)
+                    appearance = MainWindow.appearances.Effect.FirstOrDefault(o => o.Id == showList.Id);
+                else if (ObjectMenu.SelectedIndex == 3)
+                    appearance = MainWindow.appearances.Missile.FirstOrDefault(o => o.Id == showList.Id);
+                if (appearance == null) return;
 
-                        if (ObjectMenu.SelectedIndex == 0)
-                            appearance = MainWindow.appearances.Outfit.FirstOrDefault(o => o.Id == showList.Id);
-                        else if (ObjectMenu.SelectedIndex == 1)
-                            appearance = MainWindow.appearances.Object.FirstOrDefault(o => o.Id == showList.Id);
-                        else if (ObjectMenu.SelectedIndex == 2)
-                            appearance = MainWindow.appearances.Effect.FirstOrDefault(o => o.Id == showList.Id);
-                        else if (ObjectMenu.SelectedIndex == 3)
-                            appearance = MainWindow.appearances.Missile.FirstOrDefault(o => o.Id == showList.Id);
-
-                        for (int i = 0; i < appearance.FrameGroup[0].SpriteInfo.PatternFrames; i++) {
-                            BitmapImage imageFrame = Utils.ResizeForUI(LegacyAppearance.GetObjectImage(appearance, MainWindow.MainSprStorage, i));
-                            showList.Images.Add(imageFrame);
-                        }
-
-                        showList.StartAnimation();
-                    }
+                for (int i = 0; i < appearance.FrameGroup[0].SpriteInfo.PatternFrames; i++)
+                {
+                    BitmapImage imageFrame = Utils.ResizeForUI(LegacyAppearance.GetObjectImage(appearance, MainWindow.MainSprStorage, i));
+                    showList.Images.Add(imageFrame);
                 }
-            } catch (Exception e) {
+
+                var mode = GetObjListAnimationMode();
+                if (mode == ListAnimationMode.Always)
+                    showList.StartAnimation();
+                else if (mode == ListAnimationMode.Off && showList.Images.Count > 0)
+                    showList.Image = showList.Images[0];
+                else if (mode == ListAnimationMode.OnHover && showList.Images.Count > 0)
+                    showList.Image = showList.Images[0];
+            }
+            catch (Exception e)
+            {
                 MainWindow.Log(e.Message, "Error");
             }
         }

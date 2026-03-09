@@ -1,4 +1,4 @@
-﻿using Google.Protobuf;
+using Google.Protobuf;
 using MaterialDesignThemes.Wpf;
 using Microsoft.Win32;
 using Newtonsoft.Json;
@@ -160,6 +160,7 @@ namespace Assets_Editor
         private int CurrentSprDir = 0;
         private bool isPageLoaded = false;
         private bool isUpdatingFrame = false;
+        private GridView _objListGridView;
         private uint blankSpr = 0;
         private bool isObjectLoaded = false;
         private Appearances exportObjects = new();
@@ -174,6 +175,50 @@ namespace Assets_Editor
             public MemoryStream Stream { get; set; }
             public int OriginalIndex { get; set; }
             public System.Drawing.Size Size { get; set; }
+        }
+
+        private static System.Drawing.Size GetSupportedImportSize(System.Drawing.Size originalSize)
+        {
+            if (SpriteSizes.Contains(originalSize))
+            {
+                return originalSize;
+            }
+
+            var supportedSize = SpriteSizes
+                .Where(size => size.Width >= originalSize.Width && size.Height >= originalSize.Height)
+                .OrderBy(size => size.Width * size.Height)
+                .ThenBy(size => size.Width)
+                .ThenBy(size => size.Height)
+                .FirstOrDefault();
+
+            return supportedSize == default
+                ? System.Drawing.Size.Empty
+                : supportedSize;
+        }
+
+        private static MemoryStream NormalizeImportSpriteStream(MemoryStream sourceStream, System.Drawing.Size targetSize)
+        {
+            sourceStream.Position = 0;
+            using var image = System.Drawing.Image.FromStream(sourceStream, false, false);
+            if (image.Width == targetSize.Width && image.Height == targetSize.Height)
+            {
+                return new MemoryStream(sourceStream.ToArray());
+            }
+
+            using var padded = new System.Drawing.Bitmap(targetSize.Width, targetSize.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            using (var graphics = System.Drawing.Graphics.FromImage(padded))
+            {
+                graphics.Clear(System.Drawing.Color.Transparent);
+
+                int x = targetSize.Width - image.Width;
+                int y = targetSize.Height - image.Height;
+                graphics.DrawImage(image, x, y, image.Width, image.Height);
+            }
+
+            var output = new MemoryStream();
+            padded.Save(output, System.Drawing.Imaging.ImageFormat.Png);
+            output.Position = 0;
+            return output;
         }
 
         public class CatalogTransparency
@@ -207,6 +252,7 @@ namespace Assets_Editor
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
             isPageLoaded = true;
+            _objListGridView = ObjListView?.View as GridView;
         }
         public DatEditor()
         {
@@ -367,45 +413,99 @@ namespace Assets_Editor
             }
         }
 
+        private ListAnimationMode GetObjListAnimationMode()
+        {
+            return ObjListAnimationMode?.SelectedIndex is int i && i >= 0 && i <= 2
+                ? (ListAnimationMode)i
+                : ListAnimationMode.Always;
+        }
+
+        private void ObjListAnimationMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (ObjListView?.Items == null) return;
+            var mode = GetObjListAnimationMode();
+            if (mode == ListAnimationMode.Off)
+            {
+                foreach (ShowList item in ObjListView.Items)
+                    item.StopAnimation();
+            }
+            else if (mode == ListAnimationMode.Always)
+            {
+                ObjListView_ScrollChanged(ObjListView, null!);
+            }
+        }
+
+        private void ObjListViewItem_MouseEnter(object sender, MouseEventArgs e)
+        {
+            if (GetObjListAnimationMode() != ListAnimationMode.OnHover) return;
+            if (sender is not ListViewItem item || item.DataContext is not ShowList showList) return;
+            showList.StartAnimation();
+        }
+
+        private void ObjListViewItem_MouseLeave(object sender, MouseEventArgs e)
+        {
+            if (GetObjListAnimationMode() != ListAnimationMode.OnHover) return;
+            if (sender is not ListViewItem item || item.DataContext is not ShowList showList) return;
+            showList.StopAnimation();
+        }
+
+        private void ObjListViewMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (ObjListView == null || ObjListViewMode?.SelectedIndex is not int idx) return;
+            bool useGrid = idx == 1;
+            if (useGrid)
+            {
+                ObjListView.View = null;
+                ObjListView.ItemTemplate = (DataTemplate)FindResource("ObjListGridCardTemplate");
+                ObjListView.ItemsPanel = (ItemsPanelTemplate)FindResource("ObjListWrapPanel");
+                System.Windows.Controls.VirtualizingPanel.SetIsVirtualizing(ObjListView, false);
+            }
+            else
+            {
+                ObjListView.View = _objListGridView;
+                ObjListView.ItemTemplate = null;
+                ObjListView.ItemsPanel = null;
+                System.Windows.Controls.VirtualizingPanel.SetIsVirtualizing(ObjListView, true);
+            }
+            ObjListView_ScrollChanged(ObjListView, null!);
+        }
+
         private void ObjectMenuChanged(object sender, SelectionChangedEventArgs e)
         {
             UpdateShowList(ObjectMenu.SelectedIndex);
         }
         private void ObjListView_ScrollChanged(object sender, ScrollChangedEventArgs e)
         {
+            if (ObjListView.Items.Count == 0) return;
             VirtualizingStackPanel panel = Utils.FindVisualChild<VirtualizingStackPanel>(ObjListView);
-            if (ObjListView.Items.Count > 0 && panel != null)
+            if (panel != null)
             {
                 int offset = (int)panel.VerticalOffset;
-
                 for (int i = 0; i < ObjListView.Items.Count; i++)
                 {
                     ShowList item = (ShowList)ObjListView.Items[i];
                     if (i >= offset && i < Math.Min(offset + 20, ObjListView.Items.Count))
-                    {
-                        Appearance appearance = null;
-                        try
-                        {
-                            if (ObjectMenu.SelectedIndex == 0)
-                                appearance = MainWindow.appearances.Outfit.FirstOrDefault(o => o.Id == item.Id);
-                            else if (ObjectMenu.SelectedIndex == 1)
-                                appearance = MainWindow.appearances.Object.FirstOrDefault(o => o.Id == item.Id);
-                            else if (ObjectMenu.SelectedIndex == 2)
-                                appearance = MainWindow.appearances.Effect.FirstOrDefault(o => o.Id == item.Id);
-                            else if (ObjectMenu.SelectedIndex == 3)
-                                appearance = MainWindow.appearances.Missile.FirstOrDefault(o => o.Id == item.Id);
-                        }
-                        catch (Exception)
-                        {
-                            MainWindow.Log("Invalid appearance properties for id " + i + ", crash prevented.", "Critical");
-                        }
-                        AnimateSelectedListItem(item);
-                    }
+                        ApplyListItemAnimation(item);
                     else
                     {
                         item.StopAnimation();
                         item.Image = null;
                     }
+                }
+                return;
+            }
+            // Grid mode (WrapPanel): no virtualization, check visibility per item
+            for (int i = 0; i < ObjListView.Items.Count; i++)
+            {
+                ShowList item = (ShowList)ObjListView.Items[i];
+                var container = ObjListView.ItemContainerGenerator.ContainerFromItem(item) as ListViewItem;
+                bool visible = container != null && container.IsVisible;
+                if (visible)
+                    ApplyListItemAnimation(item);
+                else
+                {
+                    item.StopAnimation();
+                    item.Image = null;
                 }
             }
         }
@@ -2699,7 +2799,17 @@ namespace Assets_Editor
             {
                 stream.Position = 0;
                 using var image = System.Drawing.Image.FromStream(stream);
-                return new ImportSpriteInfo { Stream = stream, OriginalIndex = index, Size = new System.Drawing.Size(image.Width, image.Height) };
+                var originalSize = new System.Drawing.Size(image.Width, image.Height);
+                var supportedSize = GetSupportedImportSize(originalSize);
+                if (supportedSize == System.Drawing.Size.Empty)
+                {
+                    throw new InvalidDataException(
+                        $"Sprite {index} is too large to import: {originalSize.Width}x{originalSize.Height}. " +
+                        "The assets format supports up to 384x384.");
+                }
+
+                var normalizedStream = NormalizeImportSpriteStream(stream, supportedSize);
+                return new ImportSpriteInfo { Stream = normalizedStream, OriginalIndex = index, Size = supportedSize };
             }).ToList();
 
             var catalogs = new List<MainWindow.Catalog>();
@@ -2711,6 +2821,17 @@ namespace Assets_Editor
                 var spriteType = SpriteSizes.IndexOf(size);
                 var spriteSheetResults = ProcessSpriteGroup(matchingSprites, size, outputDirectory, spriteType);
                 catalogs.AddRange(spriteSheetResults);
+            }
+
+            var unresolvedSprites = spriteInfos
+                .Where(si => !importSprIdList.TryGetValue((uint)si.OriginalIndex, out uint importedId) || importedId == 0)
+                .Take(10)
+                .Select(si => $"index {si.OriginalIndex} ({si.Size.Width}x{si.Size.Height})")
+                .ToList();
+            if (unresolvedSprites.Count > 0)
+            {
+                throw new InvalidDataException(
+                    $"Failed to assign imported sprite ids for: {string.Join(", ", unresolvedSprites)}.");
             }
 
             return catalogs;
@@ -2798,8 +2919,15 @@ namespace Assets_Editor
                 int x = (currentSpriteIndex % spritesPerRow) * spriteSize.Width;
                 int y = (currentSpriteIndex / spritesPerRow) * spriteSize.Height;
 
-                graphics.DrawImage(System.Drawing.Image.FromStream(spriteInfo.Stream), x, y, spriteSize.Width, spriteSize.Height);
-                MainWindow.SprLists[importSprCounter] = spriteInfo.Stream;
+                spriteInfo.Stream.Position = 0;
+                using (var image = System.Drawing.Image.FromStream(spriteInfo.Stream, false, false))
+                {
+                    graphics.DrawImage(image, x, y, spriteSize.Width, spriteSize.Height);
+                }
+
+                var storedStream = new MemoryStream(spriteInfo.Stream.ToArray());
+                storedStream.Position = 0;
+                MainWindow.SprLists[importSprCounter] = storedStream;
                 MainWindow.AllSprList.Add(new ShowList() { Id = (uint)importSprCounter });
                 importSprIdList[(uint)spriteInfo.OriginalIndex] = (uint)importSprCounter;
                 importSprCounter++;
@@ -2814,6 +2942,29 @@ namespace Assets_Editor
             if (graphics != null) graphics.Dispose();
 
             return catalogs;
+        }
+
+        private uint ResolveImportedSpriteIdOrThrow(
+            Dictionary<(int fgIndex, int frameStart), int> remapLookup,
+            int frameGroupIndex,
+            int frameStart,
+            uint streamOffset,
+            Appearance appearance)
+        {
+            if (!remapLookup.TryGetValue((frameGroupIndex, frameStart), out var originalIndex))
+            {
+                throw new InvalidDataException(
+                    $"Missing remap entry for appearance {appearance.Id} ({appearance.AppearanceType}), frame group {frameGroupIndex}, frame start {frameStart}.");
+            }
+
+            uint lookupIndex = streamOffset + (uint)originalIndex;
+            if (!importSprIdList.TryGetValue(lookupIndex, out uint importedSpriteId) || importedSpriteId == 0)
+            {
+                throw new InvalidDataException(
+                    $"Imported sprite id was not generated for appearance {appearance.Id} ({appearance.AppearanceType}), frame group {frameGroupIndex}, frame start {frameStart}, source stream {lookupIndex}.");
+            }
+
+            return importedSpriteId;
         }
 
         private void InternalImportAEC(string fileName)
@@ -3160,16 +3311,7 @@ namespace Assets_Editor
                 {
                     for (int s = 0; s < si.SpriteId.Count; s++)
                     {
-                        // frameStart equals the tile index for single-tile frames
-                        if (remapLookup.TryGetValue((fgIndex, s), out var originalIdx) &&
-                            importSprIdList.TryGetValue((uint)originalIdx, out uint newGlobalId))
-                        {
-                            si.SpriteId[s] = newGlobalId;
-                        }
-                        else
-                        {
-                            si.SpriteId[s] = 0u;
-                        }
+                        si.SpriteId[s] = ResolveImportedSpriteIdOrThrow(remapLookup, fgIndex, s, 0, appearance);
                     }
 
                     continue;
@@ -3183,21 +3325,7 @@ namespace Assets_Editor
                 for (int f = 0; f < framesCount; f++)
                 {
                     int frameStart = f * tilesPerFrame;
-                    if (!remapLookup.TryGetValue((fgIndex, frameStart), out var originalIdx))
-                    {
-                        newIds.Add(0u);
-                    }
-                    else
-                    {
-                        if (importSprIdList.TryGetValue((uint)originalIdx, out uint newGlobalId))
-                        {
-                            newIds.Add(newGlobalId);
-                        }
-                        else
-                        {
-                            newIds.Add(0u);
-                        }
-                    }
+                    newIds.Add(ResolveImportedSpriteIdOrThrow(remapLookup, fgIndex, frameStart, 0, appearance));
                 }
 
                 // Replace sprite id list: one id per logical frame
@@ -3287,7 +3415,7 @@ namespace Assets_Editor
         private void InternalImportItems()
         {
             // start new global sprite id counter from current master list count
-            importSprCounter = MainWindow.AllSprList.Count;
+            importSprCounter = Math.Max(1, MainWindow.AllSprList.Count);
 
             OpenFileDialog openFileDialog = new()
             {
@@ -3470,15 +3598,7 @@ namespace Assets_Editor
                         {
                             for (int s = 0; s < si.SpriteId.Count; s++)
                             {
-                                if (remapLookup.TryGetValue((fgIndex, s), out var originalIdx) &&
-                                    importSprIdList.TryGetValue((uint)(streamOffset + originalIdx), out uint newGlobalId))
-                                {
-                                    si.SpriteId[s] = newGlobalId;
-                                }
-                                else
-                                {
-                                    si.SpriteId[s] = 0u;
-                                }
+                                si.SpriteId[s] = ResolveImportedSpriteIdOrThrow(remapLookup, fgIndex, s, streamOffset, appearance);
                             }
                             continue;
                         }
@@ -3490,21 +3610,7 @@ namespace Assets_Editor
                         for (int f = 0; f < framesCount; f++)
                         {
                             int frameStart = f * tilesPerFrame;
-                            if (!remapLookup.TryGetValue((fgIndex, frameStart), out var originalIdx))
-                            {
-                                newIds.Add(0u);
-                            }
-                            else
-                            {
-                                if (importSprIdList.TryGetValue((uint)(streamOffset + originalIdx), out uint newGlobalId))
-                                {
-                                    newIds.Add(newGlobalId);
-                                }
-                                else
-                                {
-                                    newIds.Add(0u);
-                                }
-                            }
+                            newIds.Add(ResolveImportedSpriteIdOrThrow(remapLookup, fgIndex, frameStart, streamOffset, appearance));
                         }
 
                         si.SpriteId.Clear();
@@ -3768,64 +3874,66 @@ namespace Assets_Editor
             }
         }
 
-        private void AnimateSelectedListItem(ShowList showList)
+        /// <summary>Loads thumbnail frames for the list item and starts or shows first frame according to animation mode.</summary>
+        public void AnimateSelectedListItem(ShowList showList)
         {
-            // Find the ListViewItem for the selected item
+            ApplyListItemAnimation(showList);
+        }
+
+        private void ApplyListItemAnimation(ShowList showList)
+        {
             var listViewItem = ObjListView.ItemContainerGenerator.ContainerFromItem(showList) as ListViewItem;
-            if (listViewItem != null)
+            if (listViewItem == null) return;
+            var imageControl = Utils.FindVisualChild<Image>(listViewItem);
+            if (imageControl == null) return;
+
+            showList.Images.Clear();
+            Appearance appearance = null;
+            bool exported = false;
+            if (ObjectMenu.SelectedIndex == 0)
             {
-                // Find the Image control within the ListViewItem
-                var imageControl = Utils.FindVisualChild<Image>(listViewItem);
-                if (imageControl != null)
+                appearance = MainWindow.appearances.Outfit.FirstOrDefault(o => o.Id == showList.Id);
+                exported = appearance != null && exportObjects.Outfit.Any(a => a.Id == appearance.Id);
+            }
+            else if (ObjectMenu.SelectedIndex == 1)
+            {
+                appearance = MainWindow.appearances.Object.FirstOrDefault(o => o.Id == showList.Id);
+                exported = appearance != null && exportObjects.Object.Any(a => a.Id == appearance.Id);
+            }
+            else if (ObjectMenu.SelectedIndex == 2)
+            {
+                appearance = MainWindow.appearances.Effect.FirstOrDefault(o => o.Id == showList.Id);
+                exported = appearance != null && exportObjects.Effect.Any(a => a.Id == appearance.Id);
+            }
+            else if (ObjectMenu.SelectedIndex == 3)
+            {
+                appearance = MainWindow.appearances.Missile.FirstOrDefault(o => o.Id == showList.Id);
+                exported = appearance != null && exportObjects.Missile.Any(a => a.Id == appearance.Id);
+            }
+
+            if (appearance == null) return;
+
+            try
+            {
+                for (int i = 0; i < appearance.FrameGroup[0].SpriteInfo.SpriteId.Count; i++)
                 {
-                    showList.Images.Clear();
-
-                    Appearance appearance = null;
-                    bool exported = false;
-                    if (ObjectMenu.SelectedIndex == 0)
-                    {
-                        appearance = MainWindow.appearances.Outfit.FirstOrDefault(o => o.Id == showList.Id);
-                        exported = exportObjects.Outfit.Any(a => a.Id == appearance.Id);
-                    }
-                    else if (ObjectMenu.SelectedIndex == 1)
-                    {
-                        appearance = MainWindow.appearances.Object.FirstOrDefault(o => o.Id == showList.Id);
-                        exported = exportObjects.Object.Any(a => a.Id == appearance.Id);
-                    }
-                    else if (ObjectMenu.SelectedIndex == 2)
-                    {
-                        appearance = MainWindow.appearances.Effect.FirstOrDefault(o => o.Id == showList.Id);
-                        exported = exportObjects.Effect.Any(a => a.Id == appearance.Id);
-                    }
-                    else if (ObjectMenu.SelectedIndex == 3)
-                    {
-                        appearance = MainWindow.appearances.Missile.FirstOrDefault(o => o.Id == showList.Id);
-                        exported = exportObjects.Missile.Any(a => a.Id == appearance.Id);
-                    }
-
-                    if (appearance == null)
-                    {
-                        return;
-                    }
-
-                    try
-                    {
-                        for (int i = 0; i < appearance.FrameGroup[0].SpriteInfo.SpriteId.Count; i++)
-                        {
-                            int index = GetSpriteIndex(appearance.FrameGroup[0], 0, (ObjectMenu.SelectedIndex == 0 || ObjectMenu.SelectedIndex == 2) ? (int)Math.Min(2, appearance.FrameGroup[0].SpriteInfo.PatternWidth - 1) : 0, ObjectMenu.SelectedIndex == 2 ? (int)Math.Min(1, appearance.FrameGroup[0].SpriteInfo.PatternHeight - 1) : 0, 0, i);
-                            BitmapImage imageFrame = Utils.ResizeForUI(MainWindow.getSpriteStream((int)appearance.FrameGroup[0].SpriteInfo.SpriteId[index]));
-                            showList.Images.Add(imageFrame);
-                        }
-                    }
-                    catch
-                    {
-                        MainWindow.Log("Error animation for sprite " + appearance.Id + ", crash prevented.");
-                    }
-
-                    showList.StartAnimation();
-                    showList.Exported = exported;
+                    int index = GetSpriteIndex(appearance.FrameGroup[0], 0, (ObjectMenu.SelectedIndex == 0 || ObjectMenu.SelectedIndex == 2) ? (int)Math.Min(2, appearance.FrameGroup[0].SpriteInfo.PatternWidth - 1) : 0, ObjectMenu.SelectedIndex == 2 ? (int)Math.Min(1, appearance.FrameGroup[0].SpriteInfo.PatternHeight - 1) : 0, 0, i);
+                    BitmapImage imageFrame = Utils.ResizeForUI(MainWindow.getSpriteStream((int)appearance.FrameGroup[0].SpriteInfo.SpriteId[index]));
+                    showList.Images.Add(imageFrame);
                 }
             }
+            catch
+            {
+                MainWindow.Log("Error animation for sprite " + appearance.Id + ", crash prevented.");
+                return;
+            }
+
+            showList.Exported = exported;
+            var mode = GetObjListAnimationMode();
+            if (mode == ListAnimationMode.Always)
+                showList.StartAnimation();
+            else if (showList.Images.Count > 0)
+                showList.Image = showList.Images[0];
         }
 
         private void About_Click(object sender, RoutedEventArgs e)

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -242,6 +242,68 @@ namespace Assets_Editor
             outFile.Position = 0;
             string fullpath = filename + "\\sprites-" + hash + ".bmp.lzma";
             filename = "sprites-" + hash + ".bmp.lzma";
+            LZMA.CompressFileLZMA(outFile, fullpath);
+        }
+
+        /// <summary>
+        /// Writes the bitmap as CipSoft LZMA to a file with the given name under outputDirectory.
+        /// Use this from the legacy-to-assets converter for stable filenames (e.g. sprites-0000.bmp.lzma).
+        /// </summary>
+        public static void ExportLzmaFile(Bitmap targetImg, string outputDirectory, string stableFileName)
+        {
+            Bitmap targetBmp = targetImg.Clone(new Rectangle(0, 0, targetImg.Width, targetImg.Height), System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+
+            MemoryStream ms = new MemoryStream();
+            targetBmp.Save(ms, System.Drawing.Imaging.ImageFormat.Bmp);
+            ms.Position = 0xA;
+            int bmpData = ms.ReadByte();
+            MemoryStream outFile = new MemoryStream();
+            outFile.WriteByte(0x42);
+            outFile.WriteByte(0x4D);
+            outFile.Write(BitConverter.GetBytes(0));
+            outFile.Write(BitConverter.GetBytes((ushort)0));
+            outFile.Write(BitConverter.GetBytes((ushort)0));
+            outFile.Write(BitConverter.GetBytes(122));
+            outFile.Write(BitConverter.GetBytes(108));
+            outFile.Write(BitConverter.GetBytes(targetBmp.Width));
+            outFile.Write(BitConverter.GetBytes(targetBmp.Height));
+            outFile.Write(BitConverter.GetBytes((ushort)1));
+            outFile.Write(BitConverter.GetBytes((ushort)32));
+            outFile.Write(BitConverter.GetBytes(3));
+            outFile.Write(BitConverter.GetBytes(0));
+            outFile.Write(BitConverter.GetBytes(0));
+            outFile.Write(BitConverter.GetBytes(0));
+            outFile.Write(BitConverter.GetBytes(0));
+            outFile.Write(BitConverter.GetBytes(0));
+            outFile.Write(BitConverter.GetBytes(0));
+            outFile.Write(BitConverter.GetBytes(0));
+            outFile.Write(BitConverter.GetBytes(0));
+            outFile.Write(new byte[] { 0x0, 0x0, 0xFF, 0x0 }, 0, 4);
+            outFile.Write(new byte[] { 0x0, 0xFF, 0x0, 0x0 }, 0, 4);
+            outFile.Write(new byte[] { 0xFF, 0x0, 0x0, 0x0 }, 0, 4);
+            outFile.Write(new byte[] { 0x0, 0x0, 0x0, 0xFF }, 0, 4);
+            outFile.Write(new byte[] { 0x57, 0x69, 0x6E, 0x20 }, 0, 4);
+            outFile.Write(BitConverter.GetBytes(0));
+            outFile.Write(BitConverter.GetBytes(0));
+            outFile.Write(BitConverter.GetBytes(0));
+            outFile.Write(BitConverter.GetBytes(0));
+            outFile.Write(BitConverter.GetBytes(0));
+            outFile.Write(BitConverter.GetBytes(0));
+            outFile.Write(BitConverter.GetBytes(0));
+            outFile.Write(BitConverter.GetBytes(0));
+            outFile.Write(BitConverter.GetBytes(0));
+            outFile.Write(BitConverter.GetBytes(0));
+            outFile.Write(BitConverter.GetBytes(0));
+            outFile.Write(BitConverter.GetBytes(0));
+            outFile.Write(BitConverter.GetBytes(0));
+            outFile.Write(BitConverter.GetBytes(0));
+            outFile.Write(BitConverter.GetBytes(0));
+            outFile.Write(ms.ToArray(), bmpData, (int)ms.Length - bmpData);
+            outFile.Seek(2, SeekOrigin.Begin);
+            outFile.Write(BitConverter.GetBytes(outFile.Length));
+            outFile.Position = 0;
+
+            string fullpath = Path.Combine(outputDirectory, stableFileName);
             LZMA.CompressFileLZMA(outFile, fullpath);
         }
     }

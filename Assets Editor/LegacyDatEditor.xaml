@@ -1,4 +1,4 @@
-﻿<Window x:Class="Assets_Editor.LegacyDatEditor"
+<Window x:Class="Assets_Editor.LegacyDatEditor"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -13,6 +13,17 @@
         <local:ArithmeticConverter x:Key="ArithmeticConverter" />
         <local:NullableColorToBrushConverter x:Key="NullableColorToBrushConverter" />
         <local:BooleanInverter x:Key="BooleanInverter"/>
+        <ItemsPanelTemplate x:Key="ObjListWrapPanel">
+            <WrapPanel Orientation="Horizontal" MaxWidth="480"/>
+        </ItemsPanelTemplate>
+        <DataTemplate x:Key="ObjListGridCardTemplate">
+            <Border Width="118" Height="118" BorderBrush="{DynamicResource PrimaryHueMidBrush}" BorderThickness="1" Margin="2" Padding="4">
+                <StackPanel VerticalAlignment="Center">
+                    <Image Source="{Binding Image}" Width="96" Height="96" Stretch="None" RenderOptions.BitmapScalingMode="NearestNeighbor" HorizontalAlignment="Center"/>
+                    <TextBlock Text="{Binding Id}" HorizontalAlignment="Center" FontSize="11" Margin="0,2,0,0"/>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
     </Window.Resources>
     <Grid x:Name="MainContent" HorizontalAlignment="Center" VerticalAlignment="Stretch" IsHitTestVisible="{Binding ElementName=ComppileDialogHost, Path=IsOpen, Mode=OneWay, Converter={StaticResource BooleanInverter}}">
         <materialDesign:DialogHost Grid.Row="1" x:Name="ComppileDialogHost" OverlayBackground="Gray" >
@@ -36,6 +47,17 @@
                 </GroupBox>
             </materialDesign:DialogHost.DialogContent>
         </materialDesign:DialogHost>
+        <materialDesign:DialogHost Grid.Row="1" x:Name="ConvertToAssetsDialogHost" OverlayBackground="Gray">
+            <materialDesign:DialogHost.DialogContent>
+                <GroupBox x:Name="ConvertToAssetsBox" Header="Convert to assets (12+)" Width="320">
+                    <StackPanel Margin="16,12">
+                        <TextBlock x:Name="ConvertToAssetsStatus" Text="Preparing..." TextWrapping="Wrap" Margin="0,0,0,12"/>
+                        <ProgressBar x:Name="ConvertToAssetsProgress" Minimum="0" Maximum="100" Value="0" Height="8" Margin="0,0,0,8"/>
+                        <TextBlock Text="Do not close the window." FontSize="11" Foreground="{DynamicResource SecondaryHueMidBrush}" HorizontalAlignment="Center"/>
+                    </StackPanel>
+                </GroupBox>
+            </materialDesign:DialogHost.DialogContent>
+        </materialDesign:DialogHost>
         <Grid HorizontalAlignment="Center" VerticalAlignment="Stretch">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*"/>
@@ -45,21 +67,45 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <Border Grid.Row="0" Grid.Column="0" BorderThickness="1" BorderBrush="{DynamicResource PrimaryHueMidBrush}" VerticalAlignment="Stretch" HorizontalAlignment="Left" Margin="10,5,0,10" Width="240">
+            <Border Grid.Row="0" Grid.Column="0" BorderThickness="1" BorderBrush="{DynamicResource PrimaryHueMidBrush}" VerticalAlignment="Stretch" HorizontalAlignment="Left" Margin="10,5,0,10" Width="460">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="45"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="40"/>
                         <RowDefinition Height="75"/>
                     </Grid.RowDefinitions>
-                    <ComboBox Grid.Row="0" x:Name="ObjectMenu" Style="{StaticResource MaterialDesignFilledComboBox}" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" SelectionChanged="ObjectMenuChanged" SelectedIndex="0" Width="240" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Padding="0,-15,0,0" Focusable="False" SnapsToDevicePixels="True" FlowDirection="LeftToRight" Height="50" Background="{DynamicResource PrimaryHueMidBrush}" BorderThickness="0,0,0,0" >
+                    <ComboBox Grid.Row="0" x:Name="ObjectMenu" Style="{StaticResource MaterialDesignFilledComboBox}" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" SelectionChanged="ObjectMenuChanged" SelectedIndex="0" Width="460" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Padding="0,-15,0,0" Focusable="False" SnapsToDevicePixels="True" FlowDirection="LeftToRight" Height="50" Background="{DynamicResource PrimaryHueMidBrush}" BorderThickness="0,0,0,0" >
                         <ComboBoxItem Content="Outfits"/>
                         <ComboBoxItem Content="Items"/>
                         <ComboBoxItem Content="Effects"/>
                         <ComboBoxItem Content="Missiles"/>
                     </ComboBox>
-                    <ListView Grid.Row="1" x:Name="ObjListView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.IsVirtualizing="True" SelectionMode="Extended"  ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.ScrollChanged="ObjListView_ScrollChanged" SelectionChanged="ObjListView_SelectionChanged" SelectedIndex="0" Margin="0,5,0,0" PreviewMouseRightButtonDown="ObjListView_PreviewMouseRightButtonDown" AllowDrop="True" Drop="ObjListView_Drop" DragLeave="ObjListView_DragLeave" DragOver="ObjListView_DragOver">
+                    <StackPanel Grid.Row="1" Orientation="Vertical" Margin="0,2,0,0">
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                            <Label Content="List animation:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                            <ComboBox x:Name="ObjListAnimationMode" Width="140" SelectedIndex="2" SelectionChanged="ObjListAnimationMode_SelectionChanged" VerticalAlignment="Center">
+                                <ComboBoxItem Content="Off"/>
+                                <ComboBoxItem Content="On hover"/>
+                                <ComboBoxItem Content="Always"/>
+                            </ComboBox>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <Label Content="View:" VerticalAlignment="Center" Margin="0,0,4,0" Width="80"/>
+                            <ComboBox x:Name="ObjListViewMode" Width="80" SelectedIndex="0" SelectionChanged="ObjListViewMode_SelectionChanged" VerticalAlignment="Center">
+                                <ComboBoxItem Content="List"/>
+                                <ComboBoxItem Content="Grid"/>
+                            </ComboBox>
+                        </StackPanel>
+                    </StackPanel>
+                    <ListView Grid.Row="2" x:Name="ObjListView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.IsVirtualizing="True" SelectionMode="Extended"  ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.ScrollChanged="ObjListView_ScrollChanged" SelectionChanged="ObjListView_SelectionChanged" SelectedIndex="0" Margin="0,5,0,0" PreviewMouseRightButtonDown="ObjListView_PreviewMouseRightButtonDown" AllowDrop="True" Drop="ObjListView_Drop" DragLeave="ObjListView_DragLeave" DragOver="ObjListView_DragOver">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem" BasedOn="{StaticResource MaterialDesignGridViewItem}">
+                                <EventSetter Event="MouseEnter" Handler="ObjListViewItem_MouseEnter"/>
+                                <EventSetter Event="MouseLeave" Handler="ObjListViewItem_MouseLeave"/>
+                            </Style>
+                        </ListView.ItemContainerStyle>
                         <ListView.View>
                             <GridView AllowsColumnReorder="False">
                                 <GridView.ColumnHeaderContainerStyle>
@@ -79,8 +125,8 @@
                             </GridView>
                         </ListView.View>
                     </ListView>
-                    <xctk:IntegerUpDown Grid.Row="2" x:Name="ObjListViewSelectedIndex" Background="{DynamicResource MaterialDesignLightSeparatorBackground}" ParsingNumberStyle="Integer" ValueChanged="ObjListViewSelectedIndex_ValueChanged" Minimum="0" Focusable="False" Margin="0,5,0,0"/>
-                    <Border Grid.Row="3" BorderThickness="1" BorderBrush="{DynamicResource PrimaryHueMidBrush}" VerticalAlignment="Top" HorizontalAlignment="Stretch" Margin="-1,5,-1,-1">
+                    <xctk:IntegerUpDown Grid.Row="3" x:Name="ObjListViewSelectedIndex" Background="{DynamicResource MaterialDesignLightSeparatorBackground}" ParsingNumberStyle="Integer" ValueChanged="ObjListViewSelectedIndex_ValueChanged" Minimum="0" Focusable="False" Margin="0,5,0,0"/>
+                    <Border Grid.Row="4" BorderThickness="1" BorderBrush="{DynamicResource PrimaryHueMidBrush}" VerticalAlignment="Top" HorizontalAlignment="Stretch" Margin="-1,5,-1,-1">
                         <StackPanel Orientation="Vertical" HorizontalAlignment="Center">
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                                 <Button x:Name="ObjectSave" Style="{StaticResource MaterialDesignIconButton}" Content="{materialDesign:PackIcon ContentSave}" Width="35" Height="35" ToolTip="Save Changes" materialDesign:RippleAssist.IsDisabled="True" PreviewMouseLeftButtonDown="ObjectSave_PreviewMouseLeftButtonDown"/>
@@ -124,6 +170,11 @@
                             <MenuItem Header="Import" Click="Import_Click">
                                 <MenuItem.Icon>
                                     <materialDesign:PackIcon Kind="ImageSync" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="Convert to assets (12+)" Click="ConvertToAssets_Click">
+                                <MenuItem.Icon>
+                                    <materialDesign:PackIcon Kind="DatabaseArrowDownOutline" />
                                 </MenuItem.Icon>
                             </MenuItem>
                             <MenuItem Header="Search Item" Click="SearchItem_Click">

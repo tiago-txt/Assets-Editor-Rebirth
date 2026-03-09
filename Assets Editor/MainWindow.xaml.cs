@@ -1,4 +1,4 @@
-﻿using MaterialDesignThemes.Wpf;
+using MaterialDesignThemes.Wpf;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Concurrent;
@@ -670,6 +670,12 @@ public partial class MainWindow : Window
     private void LoadAssets_Click(object sender, RoutedEventArgs e)
     {
         worker.RunWorkerAsync();
+    }
+
+    private void Migrate_Click(object sender, RoutedEventArgs e)
+    {
+        var win = new MigrationMenuWindow { Owner = this };
+        win.ShowDialog();
     }
 
     private static void GenerateTileSetImageList(Bitmap bitmap, Catalog sheet)

@@ -1,0 +1,92 @@
+<Window x:Class="Assets_Editor.MigrateItemsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+        Title="Migrate items (old server → Canary)"
+        Width="560" Height="430" WindowStartupLocation="CenterOwner"
+        Style="{StaticResource MaterialDesignWindow}">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <GroupBox Header="Old server (source)" Grid.Row="0" Margin="0,0,0,10">
+            <Grid Margin="5">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid Grid.Row="0" Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Label Content="items.xml:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBox x:Name="OldItemsXmlPath" IsReadOnly="True" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                    <Button Content="Browse" Click="BrowseOldItemsXml" Padding="8,2" Margin="0,0,0,0"/>
+                </Grid>
+                <Grid Grid.Row="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Label Content="items.otb (optional):" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBox x:Name="OldOtbPath" IsReadOnly="True" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                    <Button Content="Browse" Click="BrowseOldOtb" Padding="8,2"/>
+                </Grid>
+            </Grid>
+        </GroupBox>
+
+        <GroupBox Header="Canary (output)" Grid.Row="1" Margin="0,0,0,10">
+            <Grid Margin="5">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid Grid.Row="0" Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Label Content="items.xml:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBox x:Name="OutputItemsXmlPath" IsReadOnly="True" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                    <Button Content="Browse" Click="BrowseOutput" Padding="8,2"/>
+                </Grid>
+                <Grid Grid.Row="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Label Content="appearance.dat (optional):" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBox x:Name="TargetAppearancesPath" IsReadOnly="True" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                    <Button Content="Browse" Click="BrowseTargetAppearances" Padding="8,2"/>
+                </Grid>
+            </Grid>
+        </GroupBox>
+
+        <TextBlock Grid.Row="2" Text="Old items.otb remaps old server ids to the old client appearance ids. Optionally, use Canary appearance.dat to validate whether the migrated ids exist in the current client objects." 
+                   TextWrapping="Wrap" Margin="0,0,0,10" Foreground="{DynamicResource MaterialDesignBodyLight}"/>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,0,0,10">
+            <ProgressBar x:Name="ProgressBar" Width="200" Height="8" Minimum="0" Maximum="100" Value="0" VerticalAlignment="Center" Margin="0,0,10,0"/>
+            <TextBlock x:Name="StatusText" Text="" VerticalAlignment="Center"/>
+        </StackPanel>
+
+        <TextBox x:Name="LogText" Grid.Row="4" IsReadOnly="True" VerticalScrollBarVisibility="Auto" Margin="0,0,0,10" 
+                 FontFamily="Consolas" FontSize="11"/>
+
+        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button x:Name="RunMigration" Content="Run migration" Click="RunMigration_Click" Style="{StaticResource MaterialDesignRaisedButton}" Padding="12,6" Margin="0,0,8,0"/>
+            <Button Content="Close" Click="Close_Click" Style="{StaticResource MaterialDesignFlatButton}" Padding="12,6"/>
+        </StackPanel>
+    </Grid>
+</Window>

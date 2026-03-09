@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Timers;
@@ -8,6 +8,14 @@ using System.Windows.Threading;
 
 namespace Assets_Editor
 {
+    /// <summary>Controls when list item thumbnails (e.g. outfit/item list) animate.</summary>
+    public enum ListAnimationMode
+    {
+        Off = 0,
+        OnHover = 1,
+        Always = 2
+    }
+
     public class ShowList : INotifyPropertyChanged
     {
         private uint id;

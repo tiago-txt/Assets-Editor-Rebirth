@@ -77,4 +77,12 @@ This fork includes additional tooling and fixes tailored for the TFS 1.4. and DA
       - All zero entries in `SpriteInfo.SpriteId` across objects/outfits/effects/missiles are rewritten to this transparent ID.
       - This prevents OTClient from logging “Failed to fetch sprite id 0 for thing …” while keeping the visuals safely invisible where data is missing.
   
-  Please note that this is far from being 100% perfect; I did this to get a head start on one of my projects.
+Please note that this is far from 100% perfect; I did this to advance one of my projects. I released it with the intention of helping people who are experiencing the same problem as me, wanting to migrate a project prior to Tibia 12 and having almost no tools available to do so.
+Most of the code was "vibe-coded", so it won't be optimized as it should be.
+
+- **Some bugs that need fixing, or will require manual adjustments if you use the tool as is, are:**
+- Sprites with Blend layers are not imported correctly.
+- Several "reassembled" sprites are out of alignment.
+- Some very large effects (8x8, 9x9) end up out of alignment.
+- Some grids (2x2) still do not assemble as expected.
+- Grid view has not yet been implemented correctly.

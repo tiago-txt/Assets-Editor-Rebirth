@@ -32,7 +32,8 @@ public static class AppearanceNormalizer
                 if (spriteInfo.PatternWidth == 0) spriteInfo.PatternWidth = 1;
                 if (spriteInfo.PatternHeight == 0) spriteInfo.PatternHeight = 1;
                 if (spriteInfo.PatternDepth == 0) spriteInfo.PatternDepth = 1;
-                if (spriteInfo.Layers == 0) spriteInfo.Layers = 1;
+                if (spriteInfo.PatternLayers == 0) spriteInfo.PatternLayers = 1;
+                if (spriteInfo.Layers == 0) spriteInfo.Layers = spriteInfo.PatternLayers;
                 if (spriteInfo.PatternFrames == 0) spriteInfo.PatternFrames = 1;
                 if (spriteInfo.PatternX == 0) spriteInfo.PatternX = 1;
                 if (spriteInfo.PatternY == 0) spriteInfo.PatternY = 1;
@@ -92,9 +93,10 @@ public static class AppearanceNormalizer
                 if (spriteInfo.BoundingBoxPerDirection == null ||
                     spriteInfo.BoundingBoxPerDirection.Count == 0)
                 {
-                    int directions = (int)(spriteInfo.PatternX != 0 ? spriteInfo.PatternX : 4);
-                    directions = Math.Max(1, Math.Min(4, directions));
-
+                    int directions = (appearance.AppearanceType == APPEARANCE_TYPE.AppearanceOutfit) 
+                        ? Math.Max(1, Math.Min(4, (int)(spriteInfo.PatternX != 0 ? spriteInfo.PatternX : 4)))
+                        : Math.Max(1, (int)spriteInfo.PatternX);
+                    
                     spriteInfo.BoundingBoxPerDirection.Clear();
                     for (int i = 0; i < directions; i++)
                     {

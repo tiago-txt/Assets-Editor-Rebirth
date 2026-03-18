@@ -249,7 +249,9 @@ public static class AssetsConverter
                     int pf = (int)(si.PatternFrames != 0 ? si.PatternFrames : 1);
 
                     if (pz != 1) continue; // mount (patternZ) not handled in merge
-                    if (pw * ph > 256 || pf > 16 || px * py > 16) continue; // allow large effect grids (e.g. 12x12, 16x16), 4x4, 3x4, etc. (pl>1 for blend)
+                    // Merge multi-tile frames when there are multiple layers (blend layers, addons layers)
+                    // so that a 64x64/96x96 outfit correctly becomes large bitmaps per layer.
+                    if (pw * ph > 256 || pf > 16 || px * py > 16) continue;
 
                     int T = pw * ph;
                     int N = px * py * pf * pl;
@@ -411,6 +413,35 @@ public static class AssetsConverter
 
                     if (si.SpriteId.Count != T * N) continue;
 
+                    // Choose best order for this specific appearance instead of per-frame, to ensure consistency between layers/directions.
+                    int bestOrder = 0;
+                    bool foundAnyOrder = false;
+                    for (int o = 0; o < 4 && !foundAnyOrder; o++)
+                    {
+                        for (int pCheck = 0; pCheck < N && !foundAnyOrder; pCheck++)
+                        {
+                            int lC = pCheck % pl;
+                            int restC = (pCheck / pl) % (px * py);
+                            int xC = restC % px;
+                            int yC = restC / px;
+                            int fC = pCheck / (pl * px * py);
+                            for (int h = 0; h < ph; h++)
+                            {
+                                for (int w = 0; w < pw; w++)
+                                {
+                                    int idx = GetMergeIndex(o, fC, xC, yC, lC, h, w, pw, ph, px, py, pl, pf);
+                                    if (idx >= 0 && idx < si.SpriteId.Count && si.SpriteId[idx] != 0)
+                                    {
+                                        bestOrder = o;
+                                        foundAnyOrder = true;
+                                        break;
+                                    }
+                                }
+                                if (foundAnyOrder) break;
+                            }
+                        }
+                    }
+
                     var newIds = new List<uint>();
                     for (int p = 0; p < N; p++)
                     {
@@ -427,35 +458,29 @@ public static class AssetsConverter
                             g.Clear(Color.Transparent);
 
                         bool wroteAny = false;
-                        for (int order = 0; order < 4 && !wroteAny; order++)
+                        for (int h = 0; h < ph; h++)
                         {
-                            using (var g = Graphics.FromImage(canvas))
-                                g.Clear(Color.Transparent);
-                            wroteAny = false;
-                            for (int h = 0; h < ph; h++)
+                            for (int w = 0; w < pw; w++)
                             {
-                                for (int w = 0; w < pw; w++)
+                                int idx = GetMergeIndex(bestOrder, f, xpat, ypat, layer, h, w, pw, ph, px, py, pl, pf);
+                                if (idx < 0 || idx >= si.SpriteId.Count) continue;
+                                uint sid = si.SpriteId[idx];
+                                if (sid == 0) continue;
+                                try
                                 {
-                                    int idx = GetMergeIndex(order, f, xpat, ypat, layer, h, w, pw, ph, px, py, pl, pf);
-                                    if (idx < 0 || idx >= si.SpriteId.Count) continue;
-                                    uint sid = si.SpriteId[idx];
-                                    if (sid == 0) continue;
-                                    try
-                                    {
-                                        MemoryStream stream = spriteStorage.getSpriteStream(sid);
-                                        stream.Position = 0;
-                                        using Bitmap tile = new(stream);
-                                        int destX = (pw - 1 - w) * tileSize;
-                                        int destY = (ph - 1 - h) * tileSize;
-                                        // Use tile's actual size so smaller blend/addon layers are not stretched to 32x32
-                                        int tw = Math.Max(1, tile.Width);
-                                        int th = Math.Max(1, tile.Height);
-                                        using (var gg = Graphics.FromImage(canvas))
-                                            gg.DrawImage(tile, destX, destY, tw, th);
-                                        wroteAny = true;
-                                    }
-                                    catch { }
+                                    MemoryStream stream = spriteStorage.getSpriteStream(sid);
+                                    stream.Position = 0;
+                                    using Bitmap tile = new(stream);
+                                    int destX = (pw - 1 - w) * tileSize;
+                                    int destY = (ph - 1 - h) * tileSize;
+                                    // Use tile's actual size so smaller blend/addon layers are not stretched to 32x32
+                                    int tw = Math.Max(1, tile.Width);
+                                    int th = Math.Max(1, tile.Height);
+                                    using (var gg = Graphics.FromImage(canvas))
+                                        gg.DrawImage(tile, destX, destY, tw, th);
+                                    wroteAny = true;
                                 }
+                                catch { }
                             }
                         }
 
@@ -478,13 +503,14 @@ public static class AssetsConverter
                     {
                         si.SpriteId.Clear();
                         si.SpriteId.Add(newIds);
-                        si.PatternWidth = 1;
+                        // Mark as merged: tile grid is now 1x1 large images
+                        si.PatternWidth = 1; 
                         si.PatternHeight = 1;
                         int mergedSize = Math.Max(pw, ph) * tileSize;
                         si.PatternSize = (uint)RoundUpToStandard(mergedSize);
-                        // Keep PatternX, PatternY, PatternFrames, Animation, Layers and PatternLayers so directions/frames/blend (AEC/new format) map correctly.
-                        if (si.Layers == 0) si.Layers = (uint)pl;
-                        if (si.PatternLayers == 0) si.PatternLayers = (uint)pl;
+                        // These remain as multipliers for directions/addons/mounts
+                        si.Layers = (uint)pl;
+                        si.PatternLayers = (uint)pl;
                     }
                 }
             }
@@ -520,15 +546,33 @@ public static class AssetsConverter
                 {
                     var si = frameGroup.SpriteInfo;
                     if (si == null) continue;
-                    uint w = si.PatternX != 0 ? si.PatternX : 1;
-                    uint h = si.PatternY != 0 ? si.PatternY : 1;
-                    uint d = si.PatternZ != 0 ? si.PatternZ : 1;
-                    si.PatternWidth = w;
-                    si.PatternHeight = h;
-                    si.PatternDepth = d;
-                    si.PatternX = w;
-                    si.PatternY = h;
-                    si.PatternZ = d;
+
+                    // Source (Legacy format in SpriteInfo after DAT reading):
+                    // si.PatternWidth/Height = Tile Grid (e.g. 2x2)
+                    // si.PatternX/Y/Z = Multipliers (Directions/Addons/Mount)
+
+                    // Target (Tibia 12+ format in Proto):
+                    // pattern_width/height/depth = Multipliers (Directions/Addons/Mount)
+                    // pattern_x/y/z = Tile Grid (1x1, 2x2, etc)
+
+                    uint gridW = si.PatternWidth;
+                    uint gridH = si.PatternHeight;
+                    uint gridD = si.PatternZ > 1 && si.PatternWidth == 1 && si.PatternHeight == 1 ? si.PatternZ : 1; // Simplify gridZ
+
+                    uint multW = si.PatternX != 0 ? si.PatternX : 1;
+                    uint multH = si.PatternY != 0 ? si.PatternY : 1;
+                    uint multD = si.PatternZ != 0 ? si.PatternZ : 1;
+
+                    // Note: If merged, gridW/gridH were already set to 1 in MergeMultiTileSprites.
+                    si.PatternWidth = multW;
+                    si.PatternHeight = multH;
+                    si.PatternDepth = multD;
+
+                    si.PatternX = gridW;
+                    si.PatternY = gridH;
+                    si.PatternZ = gridD;
+
+                    si.Layers = si.PatternLayers > 0 ? si.PatternLayers : 1;
                 }
             }
         }
@@ -536,16 +580,18 @@ public static class AssetsConverter
 
     private static int GetMergeIndex(int order, int f, int xpat, int ypat, int layer, int h, int w, int pw, int ph, int px, int py, int pl, int pf)
     {
+        // Legacy internal order: ((f*pz + z)*py + y)*px + x)*pl + l)*ph + h)*pw + w
+        // This order differs between some Poketibia versions. Order 0 is standard Tibia.
         int pz = 1;
         switch (order)
         {
-            case 0: // direction-major (legacy DAT / OBD outfit order)
+            case 0: // Standard Pattern-Major
                 return ((((((f * pz + 0) * py + ypat) * px + xpat) * pl + layer) * ph + h) * pw + w);
-            case 1: // tile-major
+            case 1: // Tile-Major (some items/effects)
                 return (((((f * pz + 0) * py + ypat) * pl + layer) * (pw * ph) + (h * pw + w)) * px + xpat);
-            case 2: // frame-first
-                return ((((f * px + xpat) * pl + layer) * ph + h) * pw + w);
-            case 3: // tile column-major (w then h) — some effects use this layout
+            case 2: // Alternate Poketibia Layer-Major
+                return ((((((f * pz + 0) * pl + layer) * py + ypat) * px + xpat) * ph + h) * pw + w);
+            case 3: // Column-major grid
                 return ((((((f * pz + 0) * py + ypat) * px + xpat) * pl + layer) * pw + w) * ph + h);
             default:
                 return (h * pw + w);
